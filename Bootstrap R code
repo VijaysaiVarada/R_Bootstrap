@@ -1,0 +1,72 @@
+#Bootstrap
+
+library(tidyverse)
+library(broom)
+library(data.table)
+
+seed = 536283151 
+set.seed(seed)
+
+data(airquality)
+airquality = as.data.table(airquality)
+airquality = airquality[complete.cases(airquality), ]
+
+
+airquality$Day = NULL
+
+raw = airquality 
+
+raw$Month = as.factor(raw$Month)
+
+n <- nrow(raw)
+
+b = 750 
+#formula
+fmla = Ozone ~ .
+
+#OLS
+model <- lm(fmla,data=raw) 
+
+base.dt = as.data.table(tidy(model,conf.int=T, conf.level = 0.95))
+
+#Simple #classic bootstrap
+set.seed(seed)
+t2 <- as.vector(replicate(b,sample(n,replace=T),simplify=T))
+c2 <- data.table(g=rep(1:b,each=n),idx=t2)
+cl.dt <- c2[,tidy(lm(fmla,data=raw[idx,]),conf.int=T), by=g]
+
+
+#below says that each number can be repeated multiple times in a sample
+table(sample(n,replace=T))
+
+#Balanced each number is used 750 times unlike simple bootstrap
+set.seed(seed)
+#sample does shuffling
+#rep is repeating
+
+t3 <- sample(rep(1:n,b)) 
+c3 <- data.table(g=rep(1:b,each=n),idx=t3) 
+bal.dt <- c3[,tidy(lm(fmla,data=raw[idx,]),conf.int=T),by=g] 
+
+ciPNP    <- function(v,ci) {  
+  alpha <- 1-ci                 
+  z     <- qnorm(1-alpha/2)    
+  t     <- mean(v)             
+  s     <- sd(v)                
+  lP    <- t-z*s                
+  uP    <- t+z*s                
+  bNP   <- c(alpha/2,1-alpha/2) 
+  ci    <- quantile(v, bNP)     
+  return(data.table(avg=t,stDev=s,loP=lP,     hiP=uP,
+                    loNP=ci[1], hiNP=ci[2]) )
+}
+
+coverage <- 0.95
+
+cl.ci       <- cl.dt[,ciPNP(estimate,coverage),by=term] 
+bal.ci      <- bal.dt[,ciPNP(estimate,coverage),by=term] 
+
+cl.sumry  = cl.dt[,tidy(summary(estimate)),by=term] 
+bal.sumry = bal.dt[,tidy(summary(estimate)),by=term] 
+
+
